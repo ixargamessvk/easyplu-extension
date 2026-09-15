@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       queryIndicator.textContent = `Searching "${msg.query}" — ${pct}% done`;
       queryIndicator.className   = 'query-indicator visible';
     }
-    addDebugLine(`"${msg.query}" → ${count} stored`);
+    addDebugLine(`"${msg.query}" → ${count} stored (💾 saved)`);
   }
 
   if (msg.type === 'SCRAPE_DONE') {
