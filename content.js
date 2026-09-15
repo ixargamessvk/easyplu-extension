@@ -88,29 +88,59 @@
 
   // ─── Parse rows — skip dupes, respect 4-digit PLU limit ──────────────────
 
-  function parseVisibleRows(pluMap) {
+  async function parseVisibleRows(pluMap) {
     let added = 0, skipped = 0, invalid = 0;
     const rows = document.querySelectorAll('tbody.p-datatable-tbody tr[role="row"]');
+    const debug = await isDebug();
 
-    rows.forEach(row => {
+    if (debug) console.log(`[EasyPLU DBG] parseVisibleRows: ${rows.length} rows found`);
+
+    rows.forEach((row, rowIdx) => {
       const cells = row.querySelectorAll('td[role="cell"]');
-      if (cells.length < 4) return;
 
+      if (debug && rowIdx === 0) {
+        // Log full breakdown of first row so we can see the real structure
+        console.log(`[EasyPLU DBG] First row: ${cells.length} cells`);
+        cells.forEach((c, i) => {
+          console.log(`[EasyPLU DBG]   cell[${i}] text="${c.textContent.trim().substring(0, 80)}"`);
+          console.log(`[EasyPLU DBG]   cell[${i}] html="${c.innerHTML.substring(0, 200)}"`);
+        });
+      }
+
+      if (cells.length < 4) {
+        if (debug) console.log(`[EasyPLU DBG] row ${rowIdx}: skipped — only ${cells.length} cells`);
+        return;
+      }
+
+      // Cell[1] = Názov — text node after the label span
       const nameCell = cells[1];
       let name = '';
       nameCell.childNodes.forEach(node => {
         if (node.nodeType === Node.TEXT_NODE) name += node.textContent;
       });
       name = name.trim();
-      if (!name) return;
 
+      if (!name) {
+        if (debug) console.log(`[EasyPLU DBG] row ${rowIdx}: empty name, cell html="${nameCell.innerHTML.substring(0, 150)}"`);
+        return;
+      }
+
+      // Cell[3] = Číslo PLU — <span> inside the badge div
       const pluCell = cells[3];
       const pluSpan = pluCell.querySelector('div span');
-      if (!pluSpan) return;
+
+      if (!pluSpan) {
+        if (debug) console.log(`[EasyPLU DBG] row ${rowIdx} "${name}": no pluSpan, cell html="${pluCell.innerHTML.substring(0, 150)}"`);
+        return;
+      }
+
       const plu = pluSpan.textContent.trim();
 
-      // PLU must be 1–4 digits
-      if (!plu || !/^\d{1,4}$/.test(plu)) { invalid++; return; }
+      if (!plu || !/^\d{1,4}$/.test(plu)) {
+        if (debug) console.log(`[EasyPLU DBG] row ${rowIdx} "${name}": invalid PLU="${plu}"`);
+        invalid++;
+        return;
+      }
 
       const key = normalizeName(name);
       if (pluMap[key]) {
@@ -118,19 +148,25 @@
       } else {
         pluMap[key] = plu;
         added++;
+        if (debug) console.log(`[EasyPLU DBG] row ${rowIdx}: stored "${name}" → ${plu}`);
       }
     });
 
+    if (debug) console.log(`[EasyPLU DBG] parse result: +${added} new, ${skipped} dupes, ${invalid} invalid`);
     return { added, skipped, invalid };
   }
 
   // ─── Save incrementally to storage ───────────────────────────────────────
-  // This is the KEY fix: save after every query, not just at the end
 
   async function saveProgress(pluMap) {
     const count = Object.keys(pluMap).length;
-    await chrome.storage.local.set({ [STORAGE_KEY]: pluMap });
-    await dbg(`Saved ${count} items to storage`);
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: pluMap });
+      console.log(`[EasyPLU] 💾 Saved ${count} items to storage`);
+    } catch (err) {
+      console.error('[EasyPLU] ❌ Storage write FAILED:', err);
+      sendMsg('SCRAPE_ERROR', { reason: 'Storage write failed: ' + String(err) });
+    }
     return count;
   }
 
@@ -220,7 +256,7 @@
 
         if (hasResults) {
           await expandAllResults();
-          const { added, skipped, invalid } = parseVisibleRows(pluMap);
+          const { added, skipped, invalid } = await parseVisibleRows(pluMap);
           const rowCount = document.querySelectorAll('tbody.p-datatable-tbody tr[role="row"]').length;
 
           // Save incrementally after every successful query
