@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "EasyPLU AutoFill",
+  "version": "1.1.0",
+  "description": "Automatically scrapes and fills PLU codes on easy-plu.knowledge-hero.com",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://easy-plu.knowledge-hero.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "EasyPLU AutoFill"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://easy-plu.knowledge-hero.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
