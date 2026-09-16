@@ -125,9 +125,11 @@
         return;
       }
 
-      // Cell[3] = Číslo PLU — <span> inside the badge div
+      // Cell[3] = Číslo PLU — find the span containing only digits (skip the "Číslo PLU" label span)
       const pluCell = cells[3];
-      const pluSpan = pluCell.querySelector('div span');
+      const pluSpan = Array.from(pluCell.querySelectorAll('span')).find(
+        s => /^\d{1,4}$/.test(s.textContent.trim())
+      );
 
       if (!pluSpan) {
         if (debug) console.log(`[EasyPLU DBG] row ${rowIdx} "${name}": no pluSpan, cell html="${pluCell.innerHTML.substring(0, 150)}"`);
