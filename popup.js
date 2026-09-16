@@ -211,6 +211,25 @@ async function init() {
   debugToggle.checked  = dbgOn;
   debugPanel.className = dbgOn ? 'debug-panel visible' : 'debug-panel';
 
+  // If the stop flag is absent and badge shows scraping, we're mid-scrape
+  // Ask the active tab's content script for current state
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.url && tab.url.includes('easy-plu.knowledge-hero.com')) {
+      const stopStored = await chrome.storage.local.get('easyplu_stop');
+      // Check badge text — if it's '...' or a number with amber color we're scraping
+      const badge = await chrome.action.getBadgeText({ tabId: tab.id });
+      const badgeBg = await chrome.action.getBadgeBackgroundColor({ tabId: tab.id });
+      // amber = [245, 158, 11, 255]
+      const isAmber = badgeBg && badgeBg[0] > 200 && badgeBg[1] > 100 && badgeBg[2] < 50;
+      if (isAmber || badge === '...') {
+        setScrapingState(true);
+        statusBadge.textContent = 'Scraping…';
+        statusBadge.className   = 'status-badge badge-loading';
+      }
+    }
+  } catch (_) {}
+
   await refreshUI();
 }
 
