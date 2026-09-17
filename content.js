@@ -427,23 +427,57 @@
       // retry the whole entry if digits get duplicated or dropped.
 
       const resetBtn = document.querySelector('#numpad-reset');
-      const success = await enterPLUValue(pluInput, resetBtn, foundPLU);
+      const pluBtn = document.querySelector('[data-testid="numpad_plu"]');
 
-      if (!success) {
-        console.error('[EasyPLU] Failed to enter PLU correctly after retries:', foundPLU, 'final value:', pluInput.value);
-        filling = false;
-        return;
+      let confirmed = false;
+      const MAX_CONFIRM_ATTEMPTS = 2;
+
+      for (let confirmAttempt = 1; confirmAttempt <= MAX_CONFIRM_ATTEMPTS && !confirmed; confirmAttempt++) {
+        const success = await enterPLUValue(pluInput, resetBtn, foundPLU);
+
+        if (!success) {
+          console.error('[EasyPLU] Failed to enter PLU correctly after retries:', foundPLU, 'final value:', pluInput.value);
+          continue; // try the whole entry again
+        }
+
+        // Final stability check: value must stay correct for a full settle window
+        // before we trust it enough to press confirm. This catches late-arriving
+        // duplicate digit events that slip in after enterPLUValue() already returned.
+        const STABLE_WINDOW = 500;
+        const CHECK_EVERY = 50;
+        let stable = true;
+        const start = Date.now();
+        while (Date.now() - start < STABLE_WINDOW) {
+          if (pluInput.value !== foundPLU) {
+            stable = false;
+            break;
+          }
+          await sleep(CHECK_EVERY);
+        }
+
+        if (!stable) {
+          console.warn(`[EasyPLU] Value drifted during stability window (got "${pluInput.value}", wanted "${foundPLU}") — re-entering...`);
+          continue; // retry whole entry
+        }
+
+        // One last exact check right before pressing confirm
+        if (pluInput.value !== foundPLU) {
+          console.warn(`[EasyPLU] Final check failed (got "${pluInput.value}", wanted "${foundPLU}") — re-entering...`);
+          continue;
+        }
+
+        if (pluBtn) {
+          pluBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          console.log('[EasyPLU] Submitted PLU:', foundPLU);
+          confirmed = true;
+        } else {
+          console.warn('[EasyPLU] PLU confirm button not found');
+          break;
+        }
       }
 
-      await sleep(250);
-
-      // Click the green PLU confirm button
-      const pluBtn = document.querySelector('[data-testid="numpad_plu"]');
-      if (pluBtn) {
-        pluBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        console.log('[EasyPLU] Submitted PLU:', foundPLU);
-      } else {
-        console.warn('[EasyPLU] PLU confirm button not found');
+      if (!confirmed) {
+        console.error('[EasyPLU] Gave up trying to enter/confirm PLU:', foundPLU, 'for product:', productName);
       }
 
       await sleep(800);
