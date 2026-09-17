@@ -414,21 +414,39 @@
 
   // ─── Router ───────────────────────────────────────────────────────────────
 
+  // Wait for page to settle
   await sleep(1500);
 
+  // Re-run on SPA navigation (Vue router pushes new URLs without full page reload)
+  let lastUrl = window.location.href;
+  const navObserver = new MutationObserver(async () => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      console.log('[EasyPLU] SPA navigation detected:', lastUrl);
+      await sleep(1500);
+      route();
+    }
+  });
+  navObserver.observe(document.body, { childList: true, subtree: true });
+
   const url = window.location.href;
-  const isTestPage = url.includes('testmodus-plu-view') ||
-                     url.includes('testmodus') ||
-                     !!document.querySelector('[data-testid="numpad_plu"]') ||
-                     !!document.querySelector('input[name="plu-number"]');
+  async function route() {
+    const currentUrl = window.location.href;
+    const onTestPage = currentUrl.includes('testmodus-plu-view') ||
+                       currentUrl.includes('testmodus') ||
+                       !!document.querySelector('[data-testid="numpad_plu"]') ||
+                       !!document.querySelector('input[name="plu-number"]');
 
-  console.log('[EasyPLU] Page:', url);
-  console.log('[EasyPLU] Mode:', isTestPage ? 'TEST/AUTOFILL' : 'SCRAPE');
+    console.log('[EasyPLU] Page:', currentUrl);
+    console.log('[EasyPLU] Mode:', onTestPage ? 'TEST/AUTOFILL' : 'SCRAPE');
 
-  if (isTestPage) {
-    await autoFillTest();
-  } else {
-    await scrapeDatabase();
+    if (onTestPage) {
+      await autoFillTest();
+    } else {
+      await scrapeDatabase();
+    }
   }
+
+  await route();
 
 })();
