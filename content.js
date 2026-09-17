@@ -368,36 +368,35 @@
 
       // Clear any existing value first
       const resetBtn = document.querySelector('#numpad-reset');
-      if (resetBtn) { resetBtn.click(); await sleep(80); }
+      if (resetBtn) {
+        resetBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await sleep(300);
+      }
 
-      // Click each digit — use dispatchEvent with bubbles so Vue's listener picks it up
+      // Click each digit — 400ms between each so Vue processes them one at a time
       for (const digit of foundPLU.split('')) {
         const btn = document.querySelector(`#numpad-${digit}`);
         if (btn) {
-          btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-          btn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-          btn.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
           console.log('[EasyPLU] Clicked digit:', digit);
         } else {
           console.warn('[EasyPLU] Numpad button not found for digit:', digit);
         }
-        await sleep(150);
+        await sleep(400);
       }
 
-      await sleep(200);
+      await sleep(300);
 
       // Click the green PLU confirm button
       const pluBtn = document.querySelector('[data-testid="numpad_plu"]');
       if (pluBtn) {
-        pluBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        pluBtn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-        pluBtn.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+        pluBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         console.log('[EasyPLU] Submitted PLU:', foundPLU);
       } else {
         console.warn('[EasyPLU] PLU confirm button not found');
       }
 
-      await sleep(600);
+      await sleep(800);
       filling = false;
     }
 
