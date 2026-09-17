@@ -122,12 +122,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     countDisplay.textContent = count.toLocaleString();
     statusBadge.textContent  = 'Scraping…';
     statusBadge.className    = 'status-badge badge-loading';
-    // Progress bar: a→z = 26 steps; estimate based on query letter
-    if (msg.query) {
-      const idx = msg.query.charCodeAt(0) - 97; // 'a'=0 … 'z'=25
-      const pct = Math.round(((idx + 1) / 26) * 100);
+    // Progress bar: search order is randomized, so use explicit processed/total counts
+    if (msg.query && msg.totalLetters) {
+      const pct = Math.round((msg.processed / msg.totalLetters) * 100);
       progressFill.style.width  = pct + '%';
-      queryIndicator.textContent = `Searching "${msg.query}" — ${pct}% done`;
+      queryIndicator.textContent = `Searching "${msg.query}" — ${msg.processed}/${msg.totalLetters} letters (${pct}%)`;
       queryIndicator.className   = 'query-indicator visible';
     }
     addDebugLine(`"${msg.query}" → ${count} stored (💾 saved)`);
