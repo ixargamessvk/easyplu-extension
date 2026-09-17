@@ -296,6 +296,67 @@
 
   // ─── PHASE 2 — Auto-fill PLU during test ─────────────────────────────────
 
+  // ─── Verification-based PLU entry ─────────────────────────────────────────
+  // Instead of blind timing, poll the input's actual value after each click
+  // and retry the whole sequence if digits get duplicated/dropped/mistimed.
+
+  async function waitUntil(predicateFn, timeout = 1500, interval = 30) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (predicateFn()) return true;
+      await sleep(interval);
+    }
+    return false;
+  }
+
+  async function enterPLUValue(pluInput, resetBtn, targetPLU, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Clear
+      if (resetBtn) {
+        resetBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await waitUntil(() => pluInput.value === '', 1000);
+      }
+
+      let ok = true;
+      for (const digit of targetPLU.split('')) {
+        const expected = pluInput.value + digit;
+        const btn = document.querySelector(`#numpad-${digit}`);
+        if (!btn) {
+          console.warn('[EasyPLU] Numpad button not found for digit:', digit);
+          ok = false;
+          break;
+        }
+
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+        // Wait for the value to reflect exactly one new digit
+        const matched = await waitUntil(() => pluInput.value === expected, 1200);
+        if (!matched) {
+          console.warn(`[EasyPLU] Attempt ${attempt}: after "${digit}" expected "${expected}", got "${pluInput.value}"`);
+          ok = false;
+          break;
+        }
+
+        // Settle briefly, then re-check — catches delayed duplicate firing
+        await sleep(150);
+        if (pluInput.value !== expected) {
+          console.warn(`[EasyPLU] Attempt ${attempt}: value drifted after settle — expected "${expected}", got "${pluInput.value}"`);
+          ok = false;
+          break;
+        }
+      }
+
+      if (ok && pluInput.value === targetPLU) {
+        console.log(`[EasyPLU] PLU entered correctly on attempt ${attempt}:`, targetPLU);
+        return true;
+      }
+
+      console.warn(`[EasyPLU] Attempt ${attempt} failed (got "${pluInput.value}", wanted "${targetPLU}") — retrying...`);
+      await sleep(400);
+    }
+    return false;
+  }
+
   async function autoFillTest() {
     const stored = await chrome.storage.local.get(STORAGE_KEY);
     const pluMap = stored[STORAGE_KEY];
@@ -362,30 +423,19 @@
 
       // inputmode="none" blocks all keyboard events on the input.
       // The page uses a custom on-screen numpad — click the digit divs directly.
-      // Digit buttons: #numpad-0 … #numpad-9
-      // Confirm button: [data-testid="numpad_plu"]
-      // Clear button:   #numpad-reset
+      // Instead of blind sleeps, we VERIFY the input value after each click and
+      // retry the whole entry if digits get duplicated or dropped.
 
-      // Clear any existing value first
       const resetBtn = document.querySelector('#numpad-reset');
-      if (resetBtn) {
-        resetBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        await sleep(300);
+      const success = await enterPLUValue(pluInput, resetBtn, foundPLU);
+
+      if (!success) {
+        console.error('[EasyPLU] Failed to enter PLU correctly after retries:', foundPLU, 'final value:', pluInput.value);
+        filling = false;
+        return;
       }
 
-      // Click each digit — 400ms between each so Vue processes them one at a time
-      for (const digit of foundPLU.split('')) {
-        const btn = document.querySelector(`#numpad-${digit}`);
-        if (btn) {
-          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-          console.log('[EasyPLU] Clicked digit:', digit);
-        } else {
-          console.warn('[EasyPLU] Numpad button not found for digit:', digit);
-        }
-        await sleep(400);
-      }
-
-      await sleep(300);
+      await sleep(250);
 
       // Click the green PLU confirm button
       const pluBtn = document.querySelector('[data-testid="numpad_plu"]');
