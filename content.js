@@ -307,64 +307,100 @@
 
     console.log('[EasyPLU] AutoFill active —', Object.keys(pluMap).length, 'products loaded');
 
-    let lastProductName = null;
+    let lastFilledName = null;
     let filling = false;
+
+    function findPLU(productName) {
+      // 1. Exact match
+      if (pluMap[productName]) return pluMap[productName];
+      // 2. Stored name is substring of displayed name (e.g. "Banány" in "Banány BIO")
+      for (const [stored, plu] of Object.entries(pluMap)) {
+        if (productName === stored) return plu;
+      }
+      // 3. Partial match
+      for (const [stored, plu] of Object.entries(pluMap)) {
+        if (productName.includes(stored) || stored.includes(productName)) return plu;
+      }
+      return null;
+    }
 
     async function tryFill() {
       if (filling) return;
 
-      const nameEl = document.querySelector('.stage-title h1[data-test="clamped-text"]');
-      if (!nameEl) return;
-
-      const productName = normalizeName(nameEl.textContent);
-      if (!productName || productName === lastProductName) return;
-
-      const pluInput = document.querySelector('input[name="plu-number"]');
-      if (pluInput && pluInput.value.trim() !== '') return;
-
-      let foundPLU = pluMap[productName];
-      if (!foundPLU) {
-        for (const [storedName, plu] of Object.entries(pluMap)) {
-          if (productName.includes(storedName) || storedName.includes(productName)) {
-            foundPLU = plu;
-            break;
-          }
-        }
+      // Product name selector
+      const nameEl = document.querySelector('.stage-title h1[data-test="clamped-text"]')
+                  || document.querySelector('h1[data-test="clamped-text"]');
+      if (!nameEl) {
+        console.log('[EasyPLU] nameEl not found');
+        return;
       }
 
+      const productName = normalizeName(nameEl.textContent);
+      if (!productName) return;
+
+      // Find the PLU input
+      const pluInput = document.querySelector('input[name="plu-number"]')
+                    || document.querySelector('input[data-testid="plu-number-input"]');
+      if (!pluInput) {
+        console.log('[EasyPLU] pluInput not found');
+        return;
+      }
+
+      // Skip if already filled for this product
+      if (productName === lastFilledName && pluInput.value.trim() !== '') return;
+
+      const foundPLU = findPLU(productName);
       if (!foundPLU) {
         console.log('[EasyPLU] No match for:', productName);
-        lastProductName = productName;
+        lastFilledName = productName;
         return;
       }
 
       console.log('[EasyPLU] Filling PLU:', foundPLU, '→', productName);
-      lastProductName = productName;
+      lastFilledName = productName;
       filling = true;
 
-      if (pluInput) {
-        pluInput.focus();
-        await sleep(80);
+      // Focus the input first
+      pluInput.focus();
+      await sleep(120);
 
-        for (const digit of foundPLU.split('')) {
-          pluInput.dispatchEvent(new KeyboardEvent('keydown',  { key: digit, code: `Digit${digit}`, keyCode: 48 + parseInt(digit), bubbles: true }));
-          pluInput.dispatchEvent(new KeyboardEvent('keypress', { key: digit, code: `Digit${digit}`, keyCode: 48 + parseInt(digit), bubbles: true }));
-          pluInput.dispatchEvent(new KeyboardEvent('keyup',    { key: digit, code: `Digit${digit}`, keyCode: 48 + parseInt(digit), bubbles: true }));
-          await sleep(150);
-        }
-
-        await sleep(100);
-        pressEnter(pluInput);
+      // Type each digit — fire on both the input AND document (Vue may listen on document)
+      for (const digit of foundPLU.split('')) {
+        const keyCode = 48 + parseInt(digit);
+        const init = { key: digit, code: `Digit${digit}`, keyCode, which: keyCode, bubbles: true, cancelable: true };
+        pluInput.dispatchEvent(new KeyboardEvent('keydown',  init));
+        document.dispatchEvent(new KeyboardEvent('keydown',  init));
+        pluInput.dispatchEvent(new KeyboardEvent('keypress', init));
+        document.dispatchEvent(new KeyboardEvent('keypress', init));
+        pluInput.dispatchEvent(new KeyboardEvent('keyup',    init));
+        document.dispatchEvent(new KeyboardEvent('keyup',    init));
+        await sleep(150);
       }
 
-      await sleep(500);
+      await sleep(120);
+
+      // Press Enter to confirm
+      const enterInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      pluInput.dispatchEvent(new KeyboardEvent('keydown',  enterInit));
+      document.dispatchEvent(new KeyboardEvent('keydown',  enterInit));
+      pluInput.dispatchEvent(new KeyboardEvent('keypress', enterInit));
+      document.dispatchEvent(new KeyboardEvent('keypress', enterInit));
+      pluInput.dispatchEvent(new KeyboardEvent('keyup',    enterInit));
+      document.dispatchEvent(new KeyboardEvent('keyup',    enterInit));
+
+      await sleep(600);
       filling = false;
     }
 
-    const observer = new MutationObserver(() => tryFill());
+    // Watch for product name changes between questions
+    const observer = new MutationObserver(() => {
+      if (!filling) tryFill();
+    });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    await sleep(300);
-    tryFill();
+
+    // Try immediately — cursor is already in the input on page load
+    await sleep(500);
+    await tryFill();
   }
 
   // ─── Router ───────────────────────────────────────────────────────────────
@@ -374,7 +410,11 @@
   const url = window.location.href;
   const isTestPage = url.includes('testmodus-plu-view') ||
                      url.includes('testmodus') ||
-                     !!document.querySelector('[data-testid="numpad_plu"]');
+                     !!document.querySelector('[data-testid="numpad_plu"]') ||
+                     !!document.querySelector('input[name="plu-number"]');
+
+  console.log('[EasyPLU] Page:', url);
+  console.log('[EasyPLU] Mode:', isTestPage ? 'TEST/AUTOFILL' : 'SCRAPE');
 
   if (isTestPage) {
     await autoFillTest();
