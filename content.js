@@ -235,9 +235,27 @@
       window.HTMLInputElement.prototype, 'value'
     ).set;
 
-    const queries = 'abcdefghijklmnopqrstuvwxyz'.split('');
+    // ── 2D vector for randomized, human-like search order ──────────────────
+    // Row 0: the letters. Row 1: parallel flags — true once that letter has
+    // been searched. We pick a random UNSEARCHED index each iteration instead
+    // of marching a→z in order, so the query pattern doesn't look robotic.
+    const letterVector = [
+      'abcdefghijklmnopqrstuvwxyz'.split(''), // row 0: letters
+      new Array(26).fill(false)               // row 1: searched flags
+    ];
 
-    for (const query of queries) {
+    function pickRandomUnsearchedIndex() {
+      const available = [];
+      for (let i = 0; i < letterVector[1].length; i++) {
+        if (!letterVector[1][i]) available.push(i);
+      }
+      if (available.length === 0) return -1;
+      return available[Math.floor(Math.random() * available.length)];
+    }
+
+    let remaining = 26;
+
+    while (remaining > 0) {
       // Check stop flag
       if (await isStopped()) {
         console.log('[EasyPLU] Scrape stopped by user.');
@@ -246,6 +264,13 @@
         return;
       }
 
+      const idx = pickRandomUnsearchedIndex();
+      if (idx === -1) break; // all letters done (shouldn't happen given remaining check)
+
+      const query = letterVector[0][idx];
+      letterVector[1][idx] = true; // mark as searched
+      remaining--;
+
       try {
         const prevRowCount = document.querySelectorAll('tbody.p-datatable-tbody tr[role="row"]').length;
 
@@ -253,7 +278,7 @@
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         pressEnter(searchInput);
 
-        await dbg(`Searching "${query}"...`);
+        await dbg(`Searching "${query}" (${26 - remaining}/26, random order)...`);
         const hasResults = await waitForFreshResults(prevRowCount);
 
         if (hasResults) {
@@ -264,8 +289,8 @@
           // Save incrementally after every successful query
           const total = await saveProgress(pluMap);
 
-          console.log(`[EasyPLU] "${query}" — ${rowCount} rows | +${added} new, ${skipped} dupes, ${invalid} invalid | total saved: ${total}`);
-          sendMsg('SCRAPE_PROGRESS', { count: total, query });
+          console.log(`[EasyPLU] "${query}" (${26 - remaining}/26) — ${rowCount} rows | +${added} new, ${skipped} dupes, ${invalid} invalid | total saved: ${total}`);
+          sendMsg('SCRAPE_PROGRESS', { count: total, query, processed: 26 - remaining, totalLetters: 26 });
         } else {
           await dbg(`"${query}" — no results`);
         }
