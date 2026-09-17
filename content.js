@@ -400,10 +400,20 @@
       filling = false;
     }
 
-    // Watch for product name changes between questions
+    // Watch for product name changes between questions.
+    // Disconnect while filling so DOM mutations during click simulation don't re-trigger.
     const observer = new MutationObserver(() => {
       if (!filling) tryFill();
     });
+
+    // Wrap tryFill to disconnect/reconnect observer around the fill sequence
+    const originalTryFill = tryFill;
+    tryFill = async function() {
+      observer.disconnect();
+      await originalTryFill();
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    };
+
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
     // Try immediately — cursor is already in the input on page load
