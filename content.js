@@ -360,33 +360,41 @@
       lastFilledName = productName;
       filling = true;
 
-      // Focus the input first
-      pluInput.focus();
-      await sleep(120);
+      // inputmode="none" blocks all keyboard events on the input.
+      // The page uses a custom on-screen numpad — click the digit divs directly.
+      // Digit buttons: #numpad-0 … #numpad-9
+      // Confirm button: [data-testid="numpad_plu"]
+      // Clear button:   #numpad-reset
 
-      // Type each digit — fire on both the input AND document (Vue may listen on document)
+      // Clear any existing value first
+      const resetBtn = document.querySelector('#numpad-reset');
+      if (resetBtn) { resetBtn.click(); await sleep(80); }
+
+      // Click each digit
       for (const digit of foundPLU.split('')) {
-        const keyCode = 48 + parseInt(digit);
-        const init = { key: digit, code: `Digit${digit}`, keyCode, which: keyCode, bubbles: true, cancelable: true };
-        pluInput.dispatchEvent(new KeyboardEvent('keydown',  init));
-        document.dispatchEvent(new KeyboardEvent('keydown',  init));
-        pluInput.dispatchEvent(new KeyboardEvent('keypress', init));
-        document.dispatchEvent(new KeyboardEvent('keypress', init));
-        pluInput.dispatchEvent(new KeyboardEvent('keyup',    init));
-        document.dispatchEvent(new KeyboardEvent('keyup',    init));
-        await sleep(150);
+        const btn = document.querySelector(`#numpad-${digit}`);
+        if (btn) {
+          btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          btn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+          btn.click();
+        } else {
+          console.warn('[EasyPLU] Numpad button not found for digit:', digit);
+        }
+        await sleep(120);
       }
 
-      await sleep(120);
+      await sleep(150);
 
-      // Press Enter to confirm
-      const enterInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-      pluInput.dispatchEvent(new KeyboardEvent('keydown',  enterInit));
-      document.dispatchEvent(new KeyboardEvent('keydown',  enterInit));
-      pluInput.dispatchEvent(new KeyboardEvent('keypress', enterInit));
-      document.dispatchEvent(new KeyboardEvent('keypress', enterInit));
-      pluInput.dispatchEvent(new KeyboardEvent('keyup',    enterInit));
-      document.dispatchEvent(new KeyboardEvent('keyup',    enterInit));
+      // Click the green PLU confirm button
+      const pluBtn = document.querySelector('[data-testid="numpad_plu"]');
+      if (pluBtn) {
+        pluBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        pluBtn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+        pluBtn.click();
+        console.log('[EasyPLU] Submitted PLU:', foundPLU);
+      } else {
+        console.warn('[EasyPLU] PLU confirm button not found');
+      }
 
       await sleep(600);
       filling = false;
