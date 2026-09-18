@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'easyplu_map';
   const DEBUG_KEY   = 'easyplu_debug';
   const STOP_KEY    = 'easyplu_stop';
+  const HINT_KEY    = 'easyplu_hint';
 
   function normalizeName(name) {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -25,6 +26,11 @@
   async function isStopped() {
     const r = await chrome.storage.local.get(STOP_KEY);
     return !!r[STOP_KEY];
+  }
+
+  async function isHintMode() {
+    const r = await chrome.storage.local.get(HINT_KEY);
+    return !!r[HINT_KEY];
   }
 
   async function dbg(...args) {
@@ -429,6 +435,25 @@
                     || document.querySelector('input[data-testid="plu-number-input"]');
       if (!pluInput) {
         console.log('[EasyPLU] pluInput not found');
+        return;
+      }
+
+      const hintMode = await isHintMode();
+
+      if (hintMode) {
+        // Show the code without touching the numpad — leaves the actual
+        // entry to the person. Only re-process when the product changes.
+        if (productName === lastFilledName) return;
+        lastFilledName = productName;
+
+        const foundPLU = findPLU(productName);
+        if (!foundPLU) {
+          console.log('[EasyPLU] No match for:', productName);
+          pluInput.placeholder = '';
+          return;
+        }
+        console.log('[EasyPLU] Hint:', foundPLU, '→', productName);
+        pluInput.placeholder = `💡 ${foundPLU}`;
         return;
       }
 

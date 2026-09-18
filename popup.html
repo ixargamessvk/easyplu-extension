@@ -114,6 +114,7 @@
     .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .dot-green { background: #22c55e; }
     .dot-amber { background: #f59e0b; animation: pulse 1s infinite; }
+    .dot-blue  { background: #38bdf8; }
     .dot-gray  { background: #475569; }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
 
@@ -247,6 +248,15 @@
       <button class="btn btn-primary" id="rescrapeBtn">🔄 Re-scrape</button>
       <button class="btn btn-stop"    id="stopBtn" disabled>⏹ Stop</button>
       <button class="btn btn-danger"  id="clearBtn">🗑️ Clear</button>
+    </div>
+
+    <!-- Hint mode toggle -->
+    <div class="toggle-row">
+      <span class="toggle-label">💡 Hint mode (show, don't fill)</span>
+      <label class="toggle">
+        <input type="checkbox" id="hintToggle" />
+        <span class="toggle-slider"></span>
+      </label>
     </div>
 
     <!-- Debug toggle -->

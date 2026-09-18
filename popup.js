@@ -3,6 +3,7 @@
 const STORAGE_KEY = 'easyplu_map';
 const DEBUG_KEY   = 'easyplu_debug';
 const STOP_KEY    = 'easyplu_stop';
+const HINT_KEY    = 'easyplu_hint';
 
 const statusBadge    = document.getElementById('statusBadge');
 const countDisplay   = document.getElementById('countDisplay');
@@ -17,6 +18,7 @@ const stopBtn        = document.getElementById('stopBtn');
 const clearBtn       = document.getElementById('clearBtn');
 const debugToggle    = document.getElementById('debugToggle');
 const debugPanel     = document.getElementById('debugPanel');
+const hintToggle     = document.getElementById('hintToggle');
 
 // ── Debug log panel ──────────────────────────────────────────────────────────
 
@@ -38,6 +40,7 @@ function addDebugLine(text, type = '') {
 
 let isScraping = false;
 let expectedTotal = null;
+let hintMode = false; // cached locally so refreshUI() doesn't need an extra storage read
 
 function setScrapingState(scraping) {
   isScraping = scraping;
@@ -73,8 +76,13 @@ async function refreshUI() {
       const isSite  = url.includes('easy-plu.knowledge-hero.com');
 
       if (isSite && isTest && count > 0) {
-        autofillDot.className = 'dot dot-green';
-        autofillText.textContent = 'AutoFill is ACTIVE on this page';
+        if (hintMode) {
+          autofillDot.className = 'dot dot-blue';
+          autofillText.textContent = '💡 Hint mode ACTIVE on this page';
+        } else {
+          autofillDot.className = 'dot dot-green';
+          autofillText.textContent = 'AutoFill is ACTIVE on this page';
+        }
       } else if (isSite && isTest && count === 0) {
         autofillDot.className = 'dot dot-gray';
         autofillText.textContent = 'AutoFill ready but database is empty';
@@ -192,6 +200,17 @@ clearBtn.addEventListener('click', async () => {
   await refreshUI();
 });
 
+// ── Hint mode toggle ─────────────────────────────────────────────────────────
+
+hintToggle.addEventListener('change', async () => {
+  hintMode = hintToggle.checked;
+  await chrome.storage.local.set({ [HINT_KEY]: hintMode });
+  addDebugLine(hintMode
+    ? '💡 Hint mode ON — PLU will be shown, not auto-filled'
+    : '💡 Hint mode OFF — AutoFill will fill it in');
+  refreshUI();
+});
+
 // ── Debug toggle ─────────────────────────────────────────────────────────────
 
 debugToggle.addEventListener('change', async () => {
@@ -209,6 +228,11 @@ async function init() {
   const dbgOn = !!dbgStored[DEBUG_KEY];
   debugToggle.checked  = dbgOn;
   debugPanel.className = dbgOn ? 'debug-panel visible' : 'debug-panel';
+
+  // Restore hint toggle state
+  const hintStored = await chrome.storage.local.get(HINT_KEY);
+  hintMode = !!hintStored[HINT_KEY];
+  hintToggle.checked = hintMode;
 
   // If the stop flag is absent and badge shows scraping, we're mid-scrape
   // Ask the active tab's content script for current state
