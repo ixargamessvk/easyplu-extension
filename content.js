@@ -530,6 +530,34 @@
     await tryFill();
   }
 
+  // ─── Keep-alive heartbeat ──────────────────────────────────────────────────
+  // Some session-timeout implementations only reset the idle timer on
+  // trusted, real user input events (mousemove/click), which our synthetic
+  // dispatchEvent calls may not satisfy. This pings the server periodically
+  // so the session stays authenticated even during idle stretches or long
+  // scraping runs where the gaps between real navigation are large.
+
+  function startKeepAlive(intervalMs = 45000) {
+    setInterval(async () => {
+      try {
+        const resp = await fetch(window.location.href, {
+          credentials: 'include',
+          cache: 'no-store'
+        });
+        const loggedOut = resp.redirected && /login|prihlas/i.test(resp.url);
+        if (loggedOut) {
+          console.warn('[EasyPLU] ⚠️ Keep-alive detected a redirect to login — session may have expired.');
+        } else {
+          console.log('[EasyPLU] 💓 Keep-alive ping OK');
+        }
+      } catch (err) {
+        console.warn('[EasyPLU] Keep-alive ping failed:', err);
+      }
+    }, intervalMs);
+  }
+
+  startKeepAlive();
+
   // ─── Router ───────────────────────────────────────────────────────────────
 
   // Wait for page to settle
