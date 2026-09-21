@@ -2,11 +2,24 @@
 
 (async function () {
   const STORAGE_KEY = 'easyplu_map';
+  const ID_MAP_KEY  = 'easyplu_map_by_id';
   const DEBUG_KEY   = 'easyplu_debug';
   const STOP_KEY    = 'easyplu_stop';
 
   function normalizeName(name) {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  // Product image filenames embed a unique numeric article ID, e.g.
+  // ".../slowakei-bba-peivo-veniec_11533_100x100.webp" → "11533".
+  // Two products can share a display name (e.g. "Pečivo veniec" appearing
+  // twice with different PLUs) — this ID disambiguates them cheaply via
+  // string parsing, no image analysis needed. The same ID scheme appears
+  // on both the search results table and the test page's product image.
+  function extractImageId(imgEl) {
+    if (!imgEl || !imgEl.src) return null;
+    const match = imgEl.src.match(/_(\d+)_\d+x\d+\.webp/);
+    return match ? match[1] : null;
   }
 
   function sleep(ms) {
@@ -88,8 +101,8 @@
 
   // ─── Parse rows — skip dupes, respect 4-digit PLU limit ──────────────────
 
-  async function parseVisibleRows(pluMap) {
-    let added = 0, skipped = 0, invalid = 0;
+  async function parseVisibleRows(pluMap, idMap) {
+    let added = 0, skipped = 0, invalid = 0, idAdded = 0;
     const rows = document.querySelectorAll('tbody.p-datatable-tbody tr[role="row"]');
     const debug = await isDebug();
 
@@ -144,9 +157,23 @@
         return;
       }
 
+      // Extract the unique article ID from the product image filename —
+      // disambiguates products that share a display name but are different
+      // articles (e.g. two "Pečivo veniec" entries with different PLUs).
+      const imgEl = cells[0].querySelector('img');
+      const imageId = extractImageId(imgEl);
+
+      if (imageId && !idMap[imageId]) {
+        idMap[imageId] = plu;
+        idAdded++;
+      }
+
       const key = normalizeName(name);
       if (pluMap[key]) {
         skipped++;
+        if (imageId && idMap[imageId] && idMap[imageId] !== pluMap[key] && debug) {
+          console.log(`[EasyPLU DBG] Name collision: "${name}" — existing PLU ${pluMap[key]}, this one is ${plu} (id ${imageId}) — kept in idMap for exact matching`);
+        }
       } else {
         pluMap[key] = plu;
         added++;
@@ -154,17 +181,18 @@
       }
     });
 
-    if (debug) console.log(`[EasyPLU DBG] parse result: +${added} new, ${skipped} dupes, ${invalid} invalid`);
-    return { added, skipped, invalid };
+    if (debug) console.log(`[EasyPLU DBG] parse result: +${added} new, ${skipped} dupes, ${invalid} invalid, +${idAdded} new image IDs`);
+    return { added, skipped, invalid, idAdded };
   }
 
   // ─── Save incrementally to storage ───────────────────────────────────────
 
-  async function saveProgress(pluMap) {
+  async function saveProgress(pluMap, idMap) {
     const count = Object.keys(pluMap).length;
+    const idCount = Object.keys(idMap).length;
     try {
-      await chrome.storage.local.set({ [STORAGE_KEY]: pluMap });
-      console.log(`[EasyPLU] 💾 Saved ${count} items to storage`);
+      await chrome.storage.local.set({ [STORAGE_KEY]: pluMap, [ID_MAP_KEY]: idMap });
+      console.log(`[EasyPLU] 💾 Saved ${count} items (${idCount} by unique image ID) to storage`);
     } catch (err) {
       console.error('[EasyPLU] ❌ Storage write FAILED:', err);
       sendMsg('SCRAPE_ERROR', { reason: 'Storage write failed: ' + String(err) });
@@ -231,6 +259,7 @@
     }
 
     const pluMap = {};
+    const idMap = {};
     const nativeSetter = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype, 'value'
     ).set;
@@ -259,7 +288,7 @@
       // Check stop flag
       if (await isStopped()) {
         console.log('[EasyPLU] Scrape stopped by user.');
-        const count = await saveProgress(pluMap);
+        const count = await saveProgress(pluMap, idMap);
         sendMsg('SCRAPE_STOPPED', { count });
         return;
       }
@@ -283,13 +312,13 @@
 
         if (hasResults) {
           await expandAllResults();
-          const { added, skipped, invalid } = await parseVisibleRows(pluMap);
+          const { added, skipped, invalid, idAdded } = await parseVisibleRows(pluMap, idMap);
           const rowCount = document.querySelectorAll('tbody.p-datatable-tbody tr[role="row"]').length;
 
           // Save incrementally after every successful query
-          const total = await saveProgress(pluMap);
+          const total = await saveProgress(pluMap, idMap);
 
-          console.log(`[EasyPLU] "${query}" (${26 - remaining}/26) — ${rowCount} rows | +${added} new, ${skipped} dupes, ${invalid} invalid | total saved: ${total}`);
+          console.log(`[EasyPLU] "${query}" (${26 - remaining}/26) — ${rowCount} rows | +${added} new, ${skipped} dupes, ${invalid} invalid, +${idAdded} ids | total saved: ${total}`);
           sendMsg('SCRAPE_PROGRESS', { count: total, query, processed: 26 - remaining, totalLetters: 26 });
         } else {
           await dbg(`"${query}" — no results`);
@@ -299,7 +328,7 @@
         console.error('[EasyPLU] Error on query:', query, err);
         sendMsg('SCRAPE_ERROR', { reason: String(err), query });
         // Save whatever we have so far and continue
-        await saveProgress(pluMap);
+        await saveProgress(pluMap, idMap);
       }
     }
 
@@ -383,15 +412,16 @@
   }
 
   async function autoFillTest() {
-    const stored = await chrome.storage.local.get(STORAGE_KEY);
+    const stored = await chrome.storage.local.get([STORAGE_KEY, ID_MAP_KEY]);
     const pluMap = stored[STORAGE_KEY];
+    const idMap  = stored[ID_MAP_KEY] || {};
 
     if (!pluMap || Object.keys(pluMap).length === 0) {
       console.warn('[EasyPLU] No PLU data. Visit the search page first to scrape.');
       return;
     }
 
-    console.log('[EasyPLU] AutoFill active —', Object.keys(pluMap).length, 'products loaded');
+    console.log('[EasyPLU] AutoFill active —', Object.keys(pluMap).length, 'products loaded,', Object.keys(idMap).length, 'by unique image ID');
 
     let lastFilledName = null;
     let filling = false;
@@ -435,9 +465,30 @@
       // Skip if already filled for this product
       if (productName === lastFilledName && pluInput.value.trim() !== '') return;
 
-      const foundPLU = findPLU(productName);
+      // Prefer matching by the unique article-image ID — this disambiguates
+      // products that share a display name (e.g. two "Pečivo veniec" with
+      // different PLUs). Falls back to name-based matching if unavailable.
+      const productImgEl = document.querySelector('.stage-image img')
+                         || document.querySelector('.image-wrapper img');
+      const productImageId = extractImageId(productImgEl);
+
+      let foundPLU = null;
+      let matchedVia = null;
+
+      if (productImageId && idMap[productImageId]) {
+        foundPLU = idMap[productImageId];
+        matchedVia = `image id ${productImageId}`;
+      } else {
+        foundPLU = findPLU(productName);
+        matchedVia = 'name';
+      }
+
+      if (foundPLU) {
+        console.log(`[EasyPLU] Matched via ${matchedVia}`);
+      }
+
       if (!foundPLU) {
-        console.log('[EasyPLU] No match for:', productName);
+        console.log('[EasyPLU] No match for:', productName, productImageId ? `(image id ${productImageId})` : '');
         lastFilledName = productName;
         return;
       }
