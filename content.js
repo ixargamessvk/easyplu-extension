@@ -5,6 +5,7 @@
   const ID_MAP_KEY  = 'easyplu_map_by_id';
   const DEBUG_KEY   = 'easyplu_debug';
   const STOP_KEY    = 'easyplu_stop';
+  const HINT_KEY    = 'easyplu_hint';
 
   function normalizeName(name) {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -38,6 +39,11 @@
   async function isStopped() {
     const r = await chrome.storage.local.get(STOP_KEY);
     return !!r[STOP_KEY];
+  }
+
+  async function isHintMode() {
+    const r = await chrome.storage.local.get(HINT_KEY);
+    return !!r[HINT_KEY];
   }
 
   async function dbg(...args) {
@@ -490,7 +496,27 @@
       if (!foundPLU) {
         console.log('[EasyPLU] No match for:', productName, productImageId ? `(image id ${productImageId})` : '');
         lastFilledName = productName;
+        // Clear any stale hint from a previous product
+        if (pluInput.placeholder && pluInput.placeholder.startsWith('💡')) pluInput.placeholder = '';
         return;
+      }
+
+      // ── Hint mode: show the answer as a placeholder, don't touch the value ──
+      // The browser hides a placeholder automatically the moment the input
+      // has any value, so "hint disappears once you start typing" is free —
+      // no extra logic needed for that part.
+      const hintOn = await isHintMode();
+      if (hintOn) {
+        const hintText = '💡 ' + foundPLU;
+        if (pluInput.placeholder !== hintText) {
+          pluInput.placeholder = hintText;
+          console.log('[EasyPLU] Hint shown:', foundPLU, '→', productName);
+        }
+        lastFilledName = productName;
+        return; // do NOT auto-click numpad or confirm — the person enters it themselves
+      } else if (pluInput.placeholder && pluInput.placeholder.startsWith('💡')) {
+        // Hint mode just got turned off — clear any leftover hint text
+        pluInput.placeholder = '';
       }
 
       console.log('[EasyPLU] Filling PLU:', foundPLU, '→', productName);
