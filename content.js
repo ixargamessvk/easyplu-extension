@@ -4,7 +4,6 @@
   const STORAGE_KEY = 'easyplu_map';
   const DEBUG_KEY   = 'easyplu_debug';
   const STOP_KEY    = 'easyplu_stop';
-  const HINT_KEY    = 'easyplu_hint';
 
   function normalizeName(name) {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -26,11 +25,6 @@
   async function isStopped() {
     const r = await chrome.storage.local.get(STOP_KEY);
     return !!r[STOP_KEY];
-  }
-
-  async function isHintMode() {
-    const r = await chrome.storage.local.get(HINT_KEY);
-    return !!r[HINT_KEY];
   }
 
   async function dbg(...args) {
@@ -369,7 +363,7 @@
         }
 
         // Settle briefly, then re-check — catches delayed duplicate firing
-        await sleep(150);
+        await sleep(90);
         if (pluInput.value !== expected) {
           console.warn(`[EasyPLU] Attempt ${attempt}: value drifted after settle — expected "${expected}", got "${pluInput.value}"`);
           ok = false;
@@ -383,7 +377,7 @@
       }
 
       console.warn(`[EasyPLU] Attempt ${attempt} failed (got "${pluInput.value}", wanted "${targetPLU}") — retrying...`);
-      await sleep(400);
+      await sleep(300);
     }
     return false;
   }
@@ -438,25 +432,6 @@
         return;
       }
 
-      const hintMode = await isHintMode();
-
-      if (hintMode) {
-        // Show the code without touching the numpad — leaves the actual
-        // entry to the person. Only re-process when the product changes.
-        if (productName === lastFilledName) return;
-        lastFilledName = productName;
-
-        const foundPLU = findPLU(productName);
-        if (!foundPLU) {
-          console.log('[EasyPLU] No match for:', productName);
-          pluInput.placeholder = '';
-          return;
-        }
-        console.log('[EasyPLU] Hint:', foundPLU, '→', productName);
-        pluInput.placeholder = `💡 ${foundPLU}`;
-        return;
-      }
-
       // Skip if already filled for this product
       if (productName === lastFilledName && pluInput.value.trim() !== '') return;
 
@@ -493,7 +468,7 @@
         // Final stability check: value must stay correct for a full settle window
         // before we trust it enough to press confirm. This catches late-arriving
         // duplicate digit events that slip in after enterPLUValue() already returned.
-        const STABLE_WINDOW = 500;
+        const STABLE_WINDOW = 250;
         const CHECK_EVERY = 50;
         let stable = true;
         const start = Date.now();
@@ -530,7 +505,7 @@
         console.error('[EasyPLU] Gave up trying to enter/confirm PLU:', foundPLU, 'for product:', productName);
       }
 
-      await sleep(800);
+      await sleep(450);
       filling = false;
     }
 
@@ -551,7 +526,7 @@
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
     // Try immediately — cursor is already in the input on page load
-    await sleep(500);
+    await sleep(300);
     await tryFill();
   }
 
